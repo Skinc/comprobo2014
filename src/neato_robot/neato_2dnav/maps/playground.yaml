@@ -1,4 +1,4 @@
-image: /home/pruvolo/playground.pgm
+image: /home/shane/catkin_ws/src/comprobo2014/src/neato_robot/neato_2dnav/maps/playground.pgm
 resolution: 0.050000
 origin: [-51.224998, -51.224998, 0.000000]
 negate: 0

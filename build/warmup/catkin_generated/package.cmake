@@ -1,0 +1,7 @@
+set(_CATKIN_CURRENT_PACKAGE "warmup")
+set(warmup_MAINTAINER "sskikne <shaneskikne@gmail.com>")
+set(warmup_DEPRECATED "")
+set(warmup_VERSION "0.0.0")
+set(warmup_BUILD_DEPENDS "roscpp" "rospy" "std_msgs")
+set(warmup_RUN_DEPENDS "roscpp" "rospy" "std_msgs")
+set(warmup_BUILDTOOL_DEPENDS "catkin")
