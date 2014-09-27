@@ -42,44 +42,33 @@ from sensor_msgs.msg import LaserScan
 class wallFollower:
     
     def __init__(self):
-    	print "init"
     	self.pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
     	self.sub = rospy.Subscriber('/scan', LaserScan, self.dataScan)
     	rospy.init_node('wall', anonymous=True)
     	self.r = rospy.Rate(10) # 10hz
+        
         self.measurementCount = 0
+        self.targetDistance = .5  
+        
         self.wallFound = False
-        self.angleSet = False
-        self.distance_to_wall = -1.0
-        self.targetDistance = 1.0
         self.distanceSet = False
+        
         self.closestPoint =  {"index":-1, "distance":10 }
-        print self.measurementCount
-    	#set up pub sub and the rest
-
-        # for i in range(360):
-        #     if msg.ranges[i] != 0 and msg.ranges[i] < 7:
-        #         valid_measurements.append(msg.ranges[i])
-        # if len(valid_measurements):
-        #     self.distance_to_wall = sum(valid_measurements)/float(len(valid_measurements))
-        # else:
-        #     self.distance_to_wall = -1.0
-        # print self.distance_to_wall
-        # #set wallFound here
-
+        self.lastScan = []
+        
     def dataScan(self, msg):
+        self.lastScan = msg.ranges
     	self.measurementCount+=1
-        if self.measurementCount %10 is 0:
-            print self.closestPoint
         if self.wallFound:
-            self.wallFollowScan(msg)
+            self.updateClosestPoint(msg)
         else:
             self.wallFindScan(msg)
 
+    #once the wall if found, we look around the last location of the wall (closestPoint) to see how it has changed.
     def updateClosestPoint(self, msg):
 
         oldIndex =  self.closestPoint["index"]
-        updatedPoint =  {"index":oldIndex, "distance":msg.ranges[oldIndex] }
+        updatedPoint =  {"index":oldIndex, "distance":10 }
 
         for i in range(-20, 20):
             if msg.ranges[oldIndex +i] > 0: 
@@ -87,36 +76,29 @@ class wallFollower:
                     updatedPoint = {"index": oldIndex +i, "distance": msg.ranges[oldIndex +i] }
         self.closestPoint = updatedPoint
     
-
-    def wallFollowScan(self, msg):
-        self.updateClosestPoint(msg)
- 
-    def angleScan(self, msg):
-        self.updateClosestPoint(msg)
-    
+    #To find the wall we look all the way around the robot looking for a streak of relevant data.
+    #once we identify a streak of at least 7 relevant scan resuls
+    # (if there is a wall, there should be many more than 7),
+    # then we look for the closest point, which is where the wall is compared to us. 
     def wallFindScan(self, msg):
         streak = 0
         streakMin = {"index":-1, "distance":10 }
-        print "start"
+
         for i in range(360):
-            # print "try" +str(i) +" is " +str(msg.ranges[i] )
-            # if not self.wallFound:
-            if msg.ranges[i] != 0 and msg.ranges[i] < 7:
-                
+            if msg.ranges[i] != 0 and msg.ranges[i] < 7:        
                 streak += 1
                 if streak > 7:
                     middleFound = True
+                    streakMin["distance"] = msg.ranges[i]
+                    streakMin["index"] = i
+                    
+                    #check if any of the next 5 points are closer. If so, this is not the closest point. 
                     for j in range(5):
                         if msg.ranges[i+j] < streakMin['distance']:
                             middleFound = False
                     if middleFound:
-                        print "break"
                         self.wallFound = True
                         break
- 
-                    else:
-                        streakMin["distance"] = msg.ranges[i]
-                        streakMin["index"] = i
                 else: 
                     streakMin["distance"] = msg.ranges[i]
                     streakMin["index"] = i
@@ -124,59 +106,49 @@ class wallFollower:
 
             else: 
                 streak = 0
-        print streakMin
         self.closestPoint = streakMin
-    	
+    
+    #if wall not found, drives the robo straight until wall found 
     def findWall(self):
-        print "Waiting for more measurements"
-
+        #waits until we have two measurements before starting
         while self.measurementCount < 2:
             self.r.sleep()
             
         #if no wall found, we'll drive straight until we find one
-        #at this point, there is no object avoidence, though large objects might register as walls.
-        print "Searching for wall"
         while not self.wallFound:
             msg = Twist(linear=Vector3(x=-.2))
-            # self.pub.publish(msg)
-        print "Wall Found"
+        
 
-    def distanceCheck(self):
-    	print "distCheck"
-    	#determine distance from wall
-
+    #takes a desired angle and turns robot until robot matches the desired angle
     def angleCheck(self, desiredAngle):
-    	print "anglecheck"
         self.angleSet = False
         while not self.angleSet:
-            angSpeed = .01*(180 - abs(self.closestPoint['index'] - 180 - desiredAngle))
-             
+            angSpeed = .01*(180 - abs(self.closestPoint['index'] - 180 - desiredAngle))         
             msg = Twist(angular=Vector3(z=angSpeed))
             self.pub.publish(msg)
             if self.closestPoint["index"] is desiredAngle:
                 self.angleSet  = True
         
+    #Move Robot away from wall until robot is approximately the correct distance away.
     def setDistance(self):
         while not self.distanceSet:
-            error = (self.closestPoint['distance'] - self.targetDistance)
-            if abs(error) <.01:
-                print "distSet"
-                self.distanceSet = True
-            speed = error*.2
-            msg = Twist(linear=Vector3(x=speed))
-            self.pub.publish(msg)
+            if self.closestPoint['distance'] > 0.0:
+                error = (self.closestPoint['distance'] - self.targetDistance)
+                if abs(error) <.01:
+                    self.distanceSet = True
+                speed = error*.4
+                msg = Twist(linear=Vector3(x=speed))
+                self.pub.publish(msg)
         
+    #once at set distance to wall, goes along wall maintaining the set distance from the wall
     def wallFollow(self, desiredAngle):
-        print "wall following"
         while not rospy.is_shutdown():
-            #angSpeed = .01*(180 - abs(self.closestPoint['index'] - 180 - desiredAngle))
-            
-            angSpeed = .1 * ( self.closestPoint['distance'] - self.targetDistance) -  
-            
-            # do a last five and use the avg to figure out what to do. 
-            # lastFive = 
-            # use the angle
-            
+            angSpeed = 0 
+            if self.closestPoint['distance'] > 0.0:
+                angSpeed += .1 * ( self.closestPoint['distance'] - self.targetDistance)
+            if self.lastScan[desiredAngle - 45] > 0.0 or self.lastScan[desiredAngle + 45] > 0.0:
+                angSpeed += .25* (self.lastScan[desiredAngle - 45] - self.lastScan[desiredAngle + 45])
+      
             msg = Twist(linear=Vector3(x=.1), angular=Vector3(z=angSpeed)  )
             self.pub.publish(msg)
             self.r.sleep()
